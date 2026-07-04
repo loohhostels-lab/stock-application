@@ -1,0 +1,65 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Stock Management API",
+    "version": "1.0.0"
+  },
+  "components": {
+    "schemas": {
+      "GetUser": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "format": "email"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "AddUserRequest": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "age": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "age"
+        ]
+      },
+      "User": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "email": {
+            "type": "string",
+            "format": "email"
+          },
+          "age": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "name",
+          "email",
+          "age"
+        ]
+      }
+    },
+    "parameters": {}
+  },
+  "paths": {}
+}

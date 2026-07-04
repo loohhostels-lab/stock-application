@@ -5,12 +5,6 @@
     "build": "turbo run build",
     "dev": "turbo run dev",
     "lint": "turbo run lint",
-    "db:push": "drizzle-kit push",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:seed": "bun ./lib/db/seed/seed.ts",
-    "db:create-admin": "bun ./lib/db/seed/create-admin.ts",
-    "db:studio": "drizzle-kit studio",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
     "check-types": "turbo run check-types"
   },

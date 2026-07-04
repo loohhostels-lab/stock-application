@@ -1,0 +1,28 @@
+{
+  "name": "types",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "exports": {
+    ".": "./index.ts",
+    "./generated": "./generated/types.ts"
+  },
+  "scripts": {
+    "generate:openapi": "bun run ./generate-openapi.ts",
+    "generate:types": "openapi-typescript openapi.json -o generated/types.ts",
+    "generate:dart": "openapi-generator-cli generate -i openapi.json -g dart -o ../../apps/open-api-mobile/openapi",
+    "generate": "bun run generate:openapi && bun run generate:types && bun run generate:dart"
+  },
+  "devDependencies": {
+    "@openapitools/openapi-generator-cli": "2.21.3",
+    "@types/bun": "latest",
+    "openapi-typescript": "^7.13.0"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "@asteasolutions/zod-to-openapi": "^8.5.0",
+    "zod": "^4.4.3"
+  }
+}

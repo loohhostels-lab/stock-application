@@ -1,14 +1,16 @@
 {
-  "name": "drizzle",
+  "name": "db",
   "module": "index.ts",
   "type": "module",
   "private": true,
+  "exports": {
+    ".": "./index.ts"
+  },
   "scripts": {
     "db:push": "drizzle-kit push",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "bun ./lib/db/seed/seed.ts",
-    "db:create-admin": "bun ./lib/db/seed/create-admin.ts",
     "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
@@ -20,8 +22,11 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@paralleldrive/cuid2": "^3.3.0",
     "dotenv": "^17.4.2",
     "drizzle-orm": "^1.0.0-rc.4",
-    "mysql2": "^3.22.5"
+    "drizzle-zod": "^0.8.3",
+    "mysql2": "^3.22.5",
+    "zod": "^4.4.3"
   }
 }

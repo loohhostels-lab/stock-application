@@ -1,9 +1,11 @@
 import 'dotenv/config';
 import { drizzle } from "drizzle-orm/mysql2";
 import mysql from "mysql2/promise";
-import * as schema from "./db/schema/index";
+import * as schema from "./drizzle/schema/index";
 import { defineRelations } from "drizzle-orm";
+import {z} from "zod";
 
 const pool = mysql.createPool(process.env.DATABASE_URL!);
-export const db = drizzle({ client: pool, relations: defineRelations(schema) });
-export * from "./db/schema/index";
+export const db = drizzle({ client: pool.pool, relations: defineRelations(schema) });
+export * from "./drizzle/schema/index";
+export {z}

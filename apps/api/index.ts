@@ -1,8 +1,10 @@
 import express from "express";
 import jwt from "jsonwebtoken";
+import { db, userTable, loginSchema, insertUserSchema } from "db";
+import { eq, and } from "drizzle-orm";
+import { authMiddleware } from "./middleware/auth";
 
-
-import { db, adminCredentialsTable, insertAdminSchema} from "db";
+const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-12345";
 
 const app = express();
 app.use(express.json());
@@ -14,7 +16,7 @@ app.get("/health", (req, res) => {
 
 
 app.post("/login", async(req, res) => {
-    const result = insertAdminSchema.safeParse(req.body);
+    const result = loginSchema.safeParse(req.body);
 
     if (!result.success) {
         const errors = result.error.issues.map(issue => ({
@@ -28,25 +30,27 @@ app.post("/login", async(req, res) => {
             errors,
         });
     }
-    const {password, username} = result.data;
-    console.log("value from client side", "username", username, "Password", password)
 
-    //check username and password does exist in table ? 
-    const isAccountExist = await db.query.adminCredentialsTable.findFirst({
-        where: { username, password }
-    });
+    const { email, password } = result.data;
 
-    if(!isAccountExist) {
-        return res.json({
+    // Check if account exists with matching email and password
+    const [user] = await db
+        .select()
+        .from(userTable)
+        .where(and(eq(userTable.email, email), eq(userTable.password, password)))
+        .limit(1);
+
+    if (!user) {
+        return res.status(401).json({
             success: false,
-            error: "Account does not exist"
+            error: "Invalid email or password",
         });
     }
 
-    // if account exist then we sign a token and generate
+    // Sign JWT with user info
     const token = jwt.sign(
-        { id: isAccountExist.id, username: isAccountExist.username, role: isAccountExist.role },
-        process.env.JWT_SECRET || "super-secret-key-12345",
+        { id: user.id, email: user.email, role: user.role },
+        JWT_SECRET,
         { expiresIn: "30d" }
     );
 
@@ -55,7 +59,66 @@ app.post("/login", async(req, res) => {
         message: "Login successful",
         token,
     });
-})
+});
+
+
+// Protected route — example usage of auth middleware
+app.get("/me", authMiddleware, (req, res) => {
+    return res.json({
+        success: true,
+        user: req.user,
+    });
+});
+
+
+// Admin-only: create a new user
+app.post("/admin/create-user", authMiddleware, async (req, res) => {
+    // Only admins can create users
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can create users",
+        });
+    }
+
+    const result = insertUserSchema.safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    try {
+        await db.insert(userTable).values(result.data);
+
+        return res.status(201).json({
+            success: true,
+            message: "User created successfully",
+        });
+    } catch (error: any) {
+        // Handle duplicate email/phone
+        if (error?.code === "ER_DUP_ENTRY") {
+            return res.status(409).json({
+                success: false,
+                error: "A user with this email or phone already exists",
+            });
+        }
+
+        return res.status(500).json({
+            success: false,
+            error: "Failed to create user",
+        });
+    }
+});
 
 
 app.listen("8080", () => {

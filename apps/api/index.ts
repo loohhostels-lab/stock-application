@@ -1,13 +1,15 @@
 import express from "express";
+import cors from "cors";
 import jwt from "jsonwebtoken";
-import { db, userTable, loginSchema, insertUserSchema } from "db";
-import { eq, and } from "drizzle-orm";
+import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema } from "db";
+import { eq, and, ne } from "drizzle-orm";
 import { authMiddleware } from "./middleware/auth";
 import { handleDrizzleError } from "./lib/db-error";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-12345";
 
 const app = express();
+app.use(cors());
 app.use(express.json());
 
 
@@ -98,6 +100,71 @@ app.get("/me", authMiddleware, async (req, res) => {
 });
 
 
+// ─── Branch Routes ───────────────────────────────────────────────
+
+// Admin-only: create a new branch
+app.post("/admin/create-branch", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can create branches",
+        });
+    }
+
+    const result = insertBranchSchema.safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    try {
+        await db.insert(branchTable).values(result.data);
+
+        return res.status(201).json({
+            success: true,
+            message: "Branch created successfully",
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// Admin-only: get all branches
+app.get("/admin/get-all-branches", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can view branches",
+        });
+    }
+
+    try {
+        const branches = await db
+            .select()
+            .from(branchTable)
+            .where(ne(branchTable.id, "justdefaultbranchforadminTokeepdataconsistent"));
+        return res.json({
+            success: true,
+            branches,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+
+// ─── User Routes ─────────────────────────────────────────────────
+
 // Admin-only: create a new user
 app.post("/admin/create-user-branch", authMiddleware, async (req, res) => {
     // Only admins can create users
@@ -124,12 +191,8 @@ app.post("/admin/create-user-branch", authMiddleware, async (req, res) => {
         });
     }
 
-    console.log("data request", result.data)
-
     try {
-        const data = await db.insert(userTable).values({ ...result.data, branch_id: result.data.email });
-        console.log("data request", result.data)
-        console.log("inserted data", data)
+        await db.insert(userTable).values(result.data);
 
         return res.status(201).json({
             success: true,
@@ -147,12 +210,18 @@ app.get("/get-all-user", authMiddleware, async (req, res) => {
             error: "Forbidden: only admins can get all users",
         });
     }
-    const users = await db.select().from(userTable);
+    const users = await db
+        .select()
+        .from(userTable)
+        .where(ne(userTable.role, "ADMIN"));
+
+    const usersWithoutPassword = users.map(({ password, ...userWithoutPassword }) => userWithoutPassword);
+
     return res.json({
         success: true,
-        users,
+        users: usersWithoutPassword,
     });
-})
+});
 
 app.listen("8080", () => {
     console.log("server is working on port 8080")

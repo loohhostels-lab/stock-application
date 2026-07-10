@@ -8,6 +8,7 @@ export const insertUserSchema = createInsertSchema(userTable).omit({
     id: true,
     createdAt: true,
     updatedAt: true,
+    branch_id: true,
 });
 
 export const loginSchema = z.object({

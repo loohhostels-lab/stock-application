@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import { db, userTable, loginSchema, insertUserSchema } from "db";
 import { eq, and } from "drizzle-orm";
 import { authMiddleware } from "./middleware/auth";
+import { handleDrizzleError } from "./lib/db-error";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-12345";
 
@@ -72,7 +73,7 @@ app.get("/me", authMiddleware, (req, res) => {
 
 
 // Admin-only: create a new user
-app.post("/admin/create-user", authMiddleware, async (req, res) => {
+app.post("/admin/create-user-branch", authMiddleware, async (req, res) => {
     // Only admins can create users
     if (req.user?.role !== "ADMIN") {
         return res.status(403).json({
@@ -97,29 +98,35 @@ app.post("/admin/create-user", authMiddleware, async (req, res) => {
         });
     }
 
+    console.log("data request", result.data)
+
     try {
-        await db.insert(userTable).values(result.data);
+        const data = await db.insert(userTable).values({ ...result.data, branch_id: result.data.email });
+        console.log("data request", result.data)
+        console.log("inserted data", data)
 
         return res.status(201).json({
             success: true,
             message: "User created successfully",
         });
     } catch (error: any) {
-        // Handle duplicate email/phone
-        if (error?.code === "ER_DUP_ENTRY") {
-            return res.status(409).json({
-                success: false,
-                error: "A user with this email or phone already exists",
-            });
-        }
-
-        return res.status(500).json({
-            success: false,
-            error: "Failed to create user",
-        });
+        handleDrizzleError(error, res);
     }
 });
 
+app.get("/get-all-user", authMiddleware, async (req, res) => {
+    if(req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can get all users",
+        });
+    }
+    const users = await db.select().from(userTable);
+    return res.json({
+        success: true,
+        users,
+    });
+})
 
 app.listen("8080", () => {
     console.log("server is working on port 8080")

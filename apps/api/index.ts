@@ -64,11 +64,37 @@ app.post("/login", async(req, res) => {
 
 
 // Protected route — example usage of auth middleware
-app.get("/me", authMiddleware, (req, res) => {
-    return res.json({
-        success: true,
-        user: req.user,
-    });
+app.get("/me", authMiddleware, async (req, res) => {
+    try {
+        if (!req.user) {
+            return res.status(401).json({
+                success: false,
+                error: "Unauthorized",
+            });
+        }
+
+        const [user] = await db
+            .select()
+            .from(userTable)
+            .where(eq(userTable.id, req.user.id))
+            .limit(1);
+
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: "User not found",
+            });
+        }
+
+        const { password, ...userWithoutPassword } = user;
+
+        return res.json({
+            success: true,
+            user: userWithoutPassword,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
 });
 
 

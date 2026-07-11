@@ -35,33 +35,42 @@ app.post("/login", async(req, res) => {
     }
 
     const { email, password } = result.data;
+    console.log("before email and password")
 
-    // Check if account exists with matching email and password
-    const [user] = await db
-        .select()
-        .from(userTable)
-        .where(and(eq(userTable.email, email), eq(userTable.password, password)))
-        .limit(1);
+    try {
+        // Check if account exists with matching email and password
+        const [user] = await db
+            .select()
+            .from(userTable)
+            .where(and(eq(userTable.email, email), eq(userTable.password, password)))
+            .limit(1);
 
-    if (!user) {
-        return res.status(401).json({
-            success: false,
-            error: "Invalid email or password",
+        if (!user) {
+            return res.status(401).json({
+                success: false,
+                error: "Invalid email or password",
+            });
+        }
+
+        // Sign JWT with user info
+        const token = jwt.sign(
+            { id: user.id, email: user.email, role: user.role },
+            JWT_SECRET,
+            { expiresIn: "30d" }
+        );
+
+        return res.json({
+            success: true,
+            message: "Login successful",
+            token,
         });
+    } catch (error: any) {
+        console.error("Login route error:", error);
+        if (error && typeof error === "object" && "cause" in error) {
+            console.error("Login route error cause:", error.cause);
+        }
+        handleDrizzleError(error, res);
     }
-
-    // Sign JWT with user info
-    const token = jwt.sign(
-        { id: user.id, email: user.email, role: user.role },
-        JWT_SECRET,
-        { expiresIn: "30d" }
-    );
-
-    return res.json({
-        success: true,
-        message: "Login successful",
-        token,
-    });
 });
 
 
@@ -162,6 +171,111 @@ app.get("/admin/get-all-branches", authMiddleware, async (req, res) => {
     }
 });
 
+// Admin-only: edit a branch
+app.put("/admin/edit-branch/:id", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can edit branches",
+        });
+    }
+
+    const { id } = req.params;
+
+    if (!id || typeof id !== "string") {
+        return res.status(400).json({
+            success: false,
+            error: "Invalid branch ID",
+        });
+    }
+
+    const result = insertBranchSchema.partial().safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    try {
+        const [existingBranch] = await db
+            .select()
+            .from(branchTable)
+            .where(eq(branchTable.id, id))
+            .limit(1);
+
+        if (!existingBranch) {
+            return res.status(404).json({
+                success: false,
+                error: "Branch not found",
+            });
+        }
+
+        await db
+            .update(branchTable)
+            .set(result.data)
+            .where(eq(branchTable.id, id));
+
+        return res.json({
+            success: true,
+            message: "Branch updated successfully",
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// Admin-only: get a single branch by ID
+app.get("/admin/get-branch/:id", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can view branches",
+        });
+    }
+
+    const { id } = req.params;
+
+    if (!id || typeof id !== "string") {
+        return res.status(400).json({
+            success: false,
+            error: "Invalid branch ID",
+        });
+    }
+
+    try {
+        const [branch] = await db
+            .select()
+            .from(branchTable)
+            .where(eq(branchTable.id, id))
+            .limit(1);
+
+        if (!branch) {
+            return res.status(404).json({
+                success: false,
+                error: "Branch not found",
+            });
+        }
+
+        return res.json({
+            success: true,
+            branch,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+
+
 
 // ─── User Routes ─────────────────────────────────────────────────
 
@@ -211,15 +325,27 @@ app.get("/get-all-user", authMiddleware, async (req, res) => {
         });
     }
     const users = await db
-        .select()
+        .select({
+            id: userTable.id,
+            name: userTable.name,
+            email: userTable.email,
+            phone: userTable.phone,
+            address: userTable.address,
+            role: userTable.role,
+            branch_id: userTable.branch_id,
+            is_active: userTable.is_active,
+            createdAt: userTable.createdAt,
+            updatedAt: userTable.updatedAt,
+            branch_title: branchTable.title,
+            branch_address: branchTable.address,
+        })
         .from(userTable)
+        .leftJoin(branchTable, eq(userTable.branch_id, branchTable.id))
         .where(ne(userTable.role, "ADMIN"));
-
-    const usersWithoutPassword = users.map(({ password, ...userWithoutPassword }) => userWithoutPassword);
 
     return res.json({
         success: true,
-        users: usersWithoutPassword,
+        users,
     });
 });
 

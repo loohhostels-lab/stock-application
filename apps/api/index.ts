@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
-import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema } from "db";
+import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema, productInformationTable, z } from "db";
 import { eq, and, ne } from "drizzle-orm";
 import { authMiddleware } from "./middleware/auth";
 import { handleDrizzleError } from "./lib/db-error";
@@ -347,6 +347,128 @@ app.get("/get-all-user", authMiddleware, async (req, res) => {
         success: true,
         users,
     });
+});
+
+
+// ─── Product Information Routes ──────────────────────────────────
+
+const validProductFields = [
+    "company_name", "product_type", "size", "series", "ram_rom",
+    "version", "model_number", "processor", "generation", "ai_chip",
+    "vendor", "camera", "product_names", "power_consumption",
+    "power_supply", "product_length",
+] as const;
+
+const addProductInfoSchema = z.object({
+    field: z.enum(validProductFields),
+    value: z.string().min(1),
+});
+
+// Admin-only: get all product information
+app.get("/admin/get-all-product-information", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can view product information",
+        });
+    }
+
+    try {
+        const rows = await db
+            .select()
+            .from(productInformationTable);
+
+        // Parse JSON string fields into actual arrays
+        const productInformation = rows.map(row => {
+            const parsed: Record<string, any> = { ...row };
+            for (const field of validProductFields) {
+                const val = (row as any)[field];
+                parsed[field] = typeof val === "string" ? JSON.parse(val) : (val || []);
+            }
+            return parsed;
+        });
+
+        return res.json({
+            success: true,
+            productInformation,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// Admin-only: add a value to a product information field
+// Body: { field: "company_name", value: "Samsung" }
+
+app.post("/admin/add-product-information", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can modify product information",
+        });
+    }
+
+    const result = addProductInfoSchema.safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    const { field, value } = result.data;
+
+    try {
+        // Get the singleton row (first row)
+        const [existing] = await db
+            .select()
+            .from(productInformationTable)
+            .limit(1);
+
+        if (!existing) {
+            // No row exists yet — create one with the value in the specified field
+            const newRow: Record<string, string[]> = {};
+            newRow[field] = [value];
+            await db.insert(productInformationTable).values(newRow as any);
+
+            return res.status(201).json({
+                success: true,
+                message: `Created product information and added "${value}" to ${field}`,
+            });
+        }
+
+        // Row exists — parse the JSON string from DB into a real array
+        const rawValue = (existing as any)[field];
+        const currentArray: string[] = typeof rawValue === "string" ? JSON.parse(rawValue) : (rawValue || []);
+
+        if (currentArray.includes(value)) {
+            return res.status(409).json({
+                success: false,
+                error: `"${value}" already exists in ${field}`,
+            });
+        }
+
+        currentArray.push(value);
+        await db
+            .update(productInformationTable)
+            .set({ [field]: currentArray } as any)
+            .where(eq(productInformationTable.id, existing.id));
+
+        return res.json({
+            success: true,
+            message: `Added "${value}" to ${field}`,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
 });
 
 app.listen("8080", () => {

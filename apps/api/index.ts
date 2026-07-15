@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
-import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema, productInformationTable, z } from "db";
+import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema, productInformationTable, categorySelect, insertCategorySelectSchema, z } from "db";
 import { eq, and, ne } from "drizzle-orm";
 import { authMiddleware } from "./middleware/auth";
 import { handleDrizzleError } from "./lib/db-error";
@@ -612,6 +612,158 @@ app.delete("/admin/delete-product-information", authMiddleware, async (req, res)
         return res.json({
             success: true,
             message: `Deleted "${value}" from ${field}`,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// ─── Category Select Routes ──────────────────────────────────
+
+// Admin-only: get all category-select rows
+app.get("/admin/get-all-category-select", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can view category select",
+        });
+    }
+
+    try {
+        const categories = await db
+            .select()
+            .from(categorySelect);
+
+        // Parse JSON string fields into actual arrays
+        const parsed = categories.map(row => ({
+            ...row,
+            field: typeof row.field === "string" ? JSON.parse(row.field) : (row.field || []),
+        }));
+
+        return res.json({
+            success: true,
+            categories: parsed,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// Admin-only: add a new category-select row
+// Body: { category_name: "Laptop", field: ["RAM", "Size", "Brand"] }
+app.post("/admin/add-category-select", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can modify category select",
+        });
+    }
+
+    const result = insertCategorySelectSchema.safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    const { category_name, field } = result.data;
+
+    try {
+        // Check if category already exists
+        const [existing] = await db
+            .select()
+            .from(categorySelect)
+            .where(eq(categorySelect.category_name, category_name))
+            .limit(1);
+
+        if (existing) {
+            return res.status(409).json({
+                success: false,
+                error: `Category "${category_name}" already exists`,
+            });
+        }
+
+        await db.insert(categorySelect).values({
+            category_name,
+            field: field ?? [],
+        });
+
+        return res.status(201).json({
+            success: true,
+            message: `Created category "${category_name}"`,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// Admin-only: upsert a category-select row
+// Body: { category_name: "Color", field: ["Red", "Blue", "Green"] }
+app.put("/admin/upsert-category-select", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can modify category select",
+        });
+    }
+
+    const result = insertCategorySelectSchema.safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    const { category_name, field } = result.data;
+
+    try {
+        // Check if a row with this category_name already exists
+        const [existing] = await db
+            .select()
+            .from(categorySelect)
+            .where(eq(categorySelect.category_name, category_name))
+            .limit(1);
+
+        if (!existing) {
+            // Create a new row
+            await db.insert(categorySelect).values({
+                category_name,
+                field: field ?? [],
+            });
+
+            return res.status(201).json({
+                success: true,
+                message: `Created category "${category_name}" with field values`,
+            });
+        }
+
+        // Update the existing row's field array
+        await db
+            .update(categorySelect)
+            .set({ field: field ?? [] })
+            .where(eq(categorySelect.id, existing.id));
+
+        return res.json({
+            success: true,
+            message: `Updated field values for category "${category_name}"`,
         });
     } catch (error: any) {
         handleDrizzleError(error, res);

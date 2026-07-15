@@ -6,3 +6,5 @@ export * from "./user";
 export * from "./user.zod";
 export * from "./product-information";
 export * from "./product-information.zod";
+export * from "./category-select";
+export * from "./category-select.zod";

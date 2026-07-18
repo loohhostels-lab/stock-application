@@ -1,7 +1,7 @@
 import express from "express";
 import cors from "cors";
 import jwt from "jsonwebtoken";
-import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema, productInformationTable, categorySelect, insertCategorySelectSchema, z } from "db";
+import { db, userTable, branchTable, loginSchema, insertUserSchema, insertBranchSchema, productInformationTable, categorySelect, insertCategorySelectSchema, productTable, insertProductSchema, z } from "db";
 import { eq, and, ne } from "drizzle-orm";
 import { authMiddleware } from "./middleware/auth";
 import { handleDrizzleError } from "./lib/db-error";
@@ -891,6 +891,69 @@ app.put("/admin/upsert-category-select", authMiddleware, async (req, res) => {
         return res.json({
             success: true,
             message: `Updated field values for category "${category_name}"`,
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// ─── Product Routes ──────────────────────────────────────────────
+
+// Admin-only: create a new product
+app.post("/admin/create-product", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can create products",
+        });
+    }
+
+    const result = insertProductSchema.safeParse(req.body);
+
+    if (!result.success) {
+        const errors = result.error.issues.map(issue => ({
+            field: issue.path.join("."),
+            type: issue.code,
+            message: issue.message,
+        }));
+
+        return res.status(400).json({
+            success: false,
+            message: "Validation failed",
+            errors,
+        });
+    }
+
+    try {
+        await db.insert(productTable).values(result.data);
+
+        return res.status(201).json({
+            success: true,
+            message: "Product created successfully",
+        });
+    } catch (error: any) {
+        handleDrizzleError(error, res);
+    }
+});
+
+// Admin-only: get all products
+app.get("/admin/get-all-products", authMiddleware, async (req, res) => {
+    if (req.user?.role !== "ADMIN") {
+        return res.status(403).json({
+            success: false,
+            error: "Forbidden: only admins can view products",
+        });
+    }
+
+    try {
+        const products = await db
+            .select()
+            .from(productTable)
+            .orderBy(productTable.createdAt);
+
+        return res.json({
+            success: true,
+            products,
         });
     } catch (error: any) {
         handleDrizzleError(error, res);

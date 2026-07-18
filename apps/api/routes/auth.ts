@@ -4,6 +4,7 @@ import { db, userTable, loginSchema } from "db";
 import { eq, and } from "drizzle-orm";
 import { authMiddleware } from "../middleware/auth";
 import { handleDrizzleError } from "../lib/db-error";
+import { authLimiter } from "../middleware/rate-limit";
 
 const JWT_SECRET = process.env.JWT_SECRET || "super-secret-key-12345";
 
@@ -14,7 +15,7 @@ router.get("/health", (req, res) => {
 });
 
 
-router.post("/login", async(req, res) => {
+router.post("/login", authLimiter, async(req, res) => {
     const result = loginSchema.safeParse(req.body);
 
     if (!result.success) {
